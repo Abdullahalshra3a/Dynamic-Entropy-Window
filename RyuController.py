@@ -122,7 +122,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         src = eth.src
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
         
         if ip:# ckeck the adresses 
            if len(self.host) > self.Hostnumber:#we have 80 hosts and one server
@@ -193,20 +193,20 @@ class SimpleSwitch13(app_manager.RyuApp):
               if (dpid,stat.port_no) in self.blockedlist.keys():
                        pass
               elif dpid == 288:#server info
-                DiffPkt = stat.rx_packets - self.prevaluePkt[dpid,stat.port_no]
-                DiffByte = stat.rx_bytes - self.prevalueByte[dpid,stat.port_no]
-                self.prevaluePkt[dpid,stat.port_no] = stat.rx_packets
-                self.prevalueByte[dpid,stat.port_no]= stat.rx_bytes
-                self.ServerPkt.append(DiffPkt)
-                self.ServerByte.append(DiffByte)
-              else:               
                 DiffPkt = stat.tx_packets - self.prevaluePkt[dpid,stat.port_no]
                 DiffByte = stat.tx_bytes - self.prevalueByte[dpid,stat.port_no]
                 self.prevaluePkt[dpid,stat.port_no] = stat.tx_packets
                 self.prevalueByte[dpid,stat.port_no]= stat.tx_bytes
+                self.ServerPkt.append(DiffPkt)
+                self.ServerByte.append(DiffByte)
+              else:               
+                DiffPkt = stat.rx_packets - self.prevaluePkt[dpid,stat.port_no]
+                DiffByte = stat.rx_bytes - self.prevalueByte[dpid,stat.port_no]
+                self.prevaluePkt[dpid,stat.port_no] = stat.rx_packets
+                self.prevalueByte[dpid,stat.port_no]= stat.rx_bytes
                 self.ingressPkt[dpid,stat.port_no] = DiffPkt #number of pkts during the last round for a cartain host
                 self.ingressByte[dpid,stat.port_no] = DiffByte #number of Bytes during the last round for a cartain host #number of Bytes during the last round for a cartain host
-
+                #print dpid, stat.port_no, DiffPkt , stat.rx_packets 
 
               if self.Counter >= self.Hostnumber:
                 self.Counter = 0
@@ -221,65 +221,72 @@ class SimpleSwitch13(app_manager.RyuApp):
                      self.ingressPkt.setdefault((i,x),1)
                      self.ingressByte.setdefault((i,x),1)
                      z = self.ingressPkt[i,x] / sum(self.ingressPkt.values())
-                     y = self.ingressByte[i,x] / sum(self.ingressByte.values()) 
+                     y = self.ingressByte[i,x] / sum(self.ingressByte.values())
+                     if z <= 0 or y <= 0:
+                        return 
                      probabilityPkt.append(z * math.log(z, 2))
                      probabilityByte.append(y * math.log(y, 2))                
                 EntropyPkt = - int((sum(probabilityPkt) / math.log(len(probabilityPkt), 2)) * 1000)
                 EntropyByte = - int((sum(probabilityByte)/math.log(len(probabilityByte), 2)) * 1000)
                 self.initial_WindowPkt(EntropyPkt)
                 self.initial_WindowByte(EntropyByte)
-                print self.ingressPkt
 
     def GainPkt(self, EntropyPkt, Threshold):
-           self.ingressPkt = sorted(self.ingressPkt.items(), key=lambda x: x[1])
+           keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
+           print keys
+           #self.ingressPkt.clear()
            while EntropyPkt < Threshold :
-              L = self.ingressPkt[-1]
-              dpid = l[0][0]
-              port = l[0][1]
+              n = keys
+              dpid = n[0]
+              port = n[1]
               datapath = self.Data_Path[dpid]
+              parser = datapath.ofproto_parser
               match = parser.OFPMatch(in_port = port)
               actions= []
               in_port = port
               self.add_flow(datapath, 100, match , actions, in_port, buffer_id=None)
-              self.ingressPkt.pop(-1)
-              probabilityPkt = [0] * len(self.ingressPkt)
+              del self.ingressPkt[keys]
+              probabilityPkt = []
               a = 0
-              for keys, values in self.ingressPkt.items():
+              for k, values in self.ingressPkt.items():
                    z = values/ sum(self.ingressPkt.values())
-                   probabilityPkt[a]= z * math.log(z, 2)
+                   probabilityPkt.append( z * math.log(z, 2))
                    a = a + 1
               EntropyPkt = - int((sum(probabilityPkt) / math.log(a, 2)) * 1000)
 
     def GainByte(self, EntropyByte, Threshold):
-           self.ingressByte = sorted(self.ingressByte.items(), key=lambda x: x[1])
+           keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
+           print self.ingressByte
+           print keys
            while EntropyByte < Threshold :
-              L = self.ingressByte[-1]
-              dpid = l[0][0]
-              port = l[0][1]
+              n =  keys
+              dpid = n[0]
+              port = n[1]
               datapath = self.Data_Path[dpid]
+              parser = datapath.ofproto_parser
               match = parser.OFPMatch(in_port = port)
               actions = []
               in_port = port
               self.add_flow(datapath, 100, match , actions, in_port, buffer_id=None)
-              self.ingressByte.pop(-1)
-              probabilityBte = [0] * len(self.ingressByte)
+              del self.ingressByte[keys]
+              probabilityBte = []
               a = 0
-              for keys, values in self.ingressByte.items():
+              for k, values in self.ingressByte.items():
                    z = values/ sum(self.ingressByte.values())
-                   probabilityByte[a]= z * math.log(z, 2)
+                   probabilityByte.append( z * math.log(z, 2))
                    a = a + 1
-              EntropyByte = - int((sum(probabilityByte) / math.log(a, 2)) * 1000)
-  
-   
+              EntropyByte = - int((sum(probabilityByte) / math.log(a, 2)) * 1000)   
 
     def initial_WindowPkt(self,EntropyPkt):
 
          if len(self.AvaPkt) >= self.WindowSizePkt:
              self.PktEntropycalculation(EntropyPkt)
-         elif EntropyPkt > 0.6:#adjust the iniital window with the reasonable values 
-             self.addtoWindowPkt(EntropyPkt)
-         else:
-             pass
+             return
+         if len(self.ServerPkt) > 10:
+           self.ServerPkt = self.ServerPkt[-10:]
+
+         if EntropyPkt > 600:#adjust the iniital window with the reasonable values 
+             self.addtoWindowPkt(EntropyPkt)   
 
     def addtoWindowPkt(self, EntropyPkt): 
          for i in range(0,len(self.AvaPkt)):
@@ -290,13 +297,16 @@ class SimpleSwitch13(app_manager.RyuApp):
          self.AvaPkt.append([EntropyPkt, 1])
          print "the Pkt length = ", len(self.AvaPkt)
 
-    def initial_WindowByte(self,EntropyByte):
+    def initial_WindowByte(self, EntropyByte):
          if len(self.AvaByte) >= self.WindowSizeByte:
              self.ByteEntropycalculation(EntropyByte)
-         elif EntropyByte > 0.6:
+             return
+         if len(self.ServerByte) > 10:
+             self.ServerPkt = self.ServerPkt[-10:]
+
+         if EntropyByte > 600:
              self.addtoWindowByte(EntropyByte)
-         else:
-             pass
+             
          
     def addtoWindowByte(self, EntropyByte): 
          for i in range(0,len(self.AvaByte)):
@@ -317,12 +327,11 @@ class SimpleSwitch13(app_manager.RyuApp):
              A = A + math.pow((self.AvaPkt[i][0] - Mean), 2)
           Mean = int(Mean)
           Deviation = int(math.sqrt(A/(self.WindowSizePkt - 1 ))) #sample standerd deviation
-          Threshold2 = Mean - (Deviation * 3)
-          Threshold1 = Mean - (Deviation * 2)
-          print "MeanPkt,Threshold1,Threshold2,Entropy "
-          print Mean,Threshold1,Threshold2,Entropy 
-          self.ResultPkt.append([Mean,Threshold1,Threshold2,Entropy])
-          self.Pkt_ThresholdVerification(Threshold1, Threshold2, Entropy)
+          Threshold = Mean - (Deviation * 3)
+          print "MeanPkt,Threshold,Entropy "
+          print Mean,Threshold,Entropy 
+          self.ResultPkt.append([Mean,Threshold,Entropy])
+          self.Pkt_ThresholdVerification( Threshold, Entropy)
 
           ResultPktfile = open ('ResultPkt.txt', 'w')
           ResultPktfile.write(str(self.ResultPkt))
@@ -348,12 +357,11 @@ class SimpleSwitch13(app_manager.RyuApp):
              A = A + math.pow((self.AvaByte[i][0] - Mean), 2)
           Mean = int(Mean)
           Deviation = int(math.sqrt(A/(self.WindowSizeByte - 1)))
-          Threshold2 = Mean - (Deviation * 3)
-          Threshold1= Mean - (Deviation * 2)
-          print "MeanByte,Threshold1,Threshold2,Entropy "
-          print Mean,Threshold1,Threshold2,Entropy 
-          self.ResultByte.append([Mean,Threshold1,Threshold2,Entropy])
-          self.Byte_ThresholdVerification(Threshold1, Threshold2, Entropy)
+          Threshold = Mean - (Deviation * 3)
+          print "MeanByte,Threshold,Entropy "
+          print Mean,Threshold,Entropy 
+          self.ResultByte.append([Mean,Threshold,Entropy])
+          self.Byte_ThresholdVerification(Threshold, Entropy)
 
           ResultBytefile = open ('ResultByte.txt', 'w')
           ResultBytefile.write(str(self.ResultByte))
@@ -365,7 +373,7 @@ class SimpleSwitch13(app_manager.RyuApp):
           bl.write(str(self.AvaByte))
           bl.close
 
-    def Check_Pktwindow(self, x):# to increase or decrease the pkt window
+    def Check_Pktwindow(self, x):# to increase or decrease the pkt window size
           if len(self.AvaPkt) < self.WindowSizePkt:
              return
           Frequency = self.AvaPkt[x][1]
@@ -457,50 +465,50 @@ class SimpleSwitch13(app_manager.RyuApp):
              print "self.WindowSizeByte", self.WindowSizeByte
              return
 
-    def get_datapath(self, dpid):
-         return self.Data_Path[dpid]
-
-
     def Hostport(self):
         for i in self.Edgeswitch:
            for x in range(3,5):
               self.prevaluePkt[i, x]= 0
               self.prevalueByte[i, x]= 0
          
-    def Pkt_ThresholdVerification(self, Threshold1, Threshold2, Entropy):
+    def Pkt_ThresholdVerification(self, Threshold, Entropy):
         data1 = [1,2,3,4,5,6,7,8,9,10]
         data2 = [1,2,3,4,5,6,7,8,9,10,11]
         l = 0
         # calculate Pearson's correlation
+
         if len(self.ServerPkt) > 10 :
+           self.ServerPkt = self.ServerPkt[-11:]
+           print " len(self.ServerPkt) ", len(self.ServerPkt)
            Oldcorr, _ = pearsonr(data1, self.ServerPkt[:-1])
            Newcorr, _ = pearsonr(data2, self.ServerPkt)
            l = Newcorr - Oldcorr
            print " l = ", l 
-        if Entropy < Threshold2 and l >= 0.2: 
+           if Entropy < Threshold and l >= 0.2: 
                        self.ServerPkt.pop(-1)# The controller would not consider the result out of the normal behaviour
                        self.blockPkt.append(3)
-                       self.GainPkt(Entropy, Threshold2)# In order to block the attackers
-        else: 
+                       self.GainPkt(Entropy, Threshold)# In order to block the attackers
+           else: 
              self.ServerPkt.pop(0)
              self.blockPkt.append(0)
              self.addtoWindowPkt(Entropy)
 
-    def Byte_ThresholdVerification(self, Threshold1, Threshold2, Entropy):
+
+    def Byte_ThresholdVerification(self, Threshold, Entropy):
         data1 = [1,2,3,4,5,6,7,8,9,10]
         data2 = [1,2,3,4,5,6,7,8,9,10,11]
         l = 0
         # calculate Pearson's correlation
         if len(self.ServerByte) > 10:
-           Oldcorr, _ = pearsonr(data1, self.ServerByte[:-1])
-           Newcorr, _ = pearsonr(data2, self.ServerByte)
+           Oldcorr, _ = pearsonr(data1, self.ServerByte[-10:])
+           Newcorr, _ = pearsonr(data2, self.ServerByte[-11:])
            l = Newcorr - Oldcorr
            print " l = ", l 
-        if Entropy < Threshold2 and l >= 0.2: 
+           if Entropy < Threshold and l >= 0.2: 
                        self.ServerByte.pop(-1)
                        self.blockByte.append(3)
-                       self.GainByte(Entropy, Threshold2)
-        else: 
+                       self.GainByte(Entropy, Threshold)
+           else: 
              self.ServerByte.pop(0)
              self.blockByte.append(0)
              self.addtoWindowByte(Entropy)
@@ -545,9 +553,9 @@ class ThreadingExample(SimpleSwitch13):
           time.sleep(3)
 
     def monitor_port(self):
-          time.sleep(10)
+          time.sleep(20)
           while True:
                self.send_port_stats_request()
-               time.sleep(3)
+               time.sleep(5)
                
 example = ThreadingExample()

@@ -3,6 +3,7 @@ from mininet.net import Mininet
 from mininet.node import Controller, OVSKernelSwitch, RemoteController
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info
+from mininet.node import CPULimitedHost
 from mininet.link import TCLink
 from random import randint
 import time
@@ -14,18 +15,18 @@ Pkt_number = 0
 def emptyNet():
    os.system('sudo mn -c')
    os.system('pkill -KILL iperf')
-   net = Mininet(controller=RemoteController,  switch=OVSKernelSwitch)
+   net = Mininet(controller=RemoteController,host=CPULimitedHost, switch=OVSKernelSwitch, link=TCLink )
    c1 = net.addController('c1', controller=RemoteController, ip="127.0.0.1")
    host= [0]*15 
    for i in range(1,16):
       if i < 10 :
            mac = '00:00:00:00:00:0%s'%str(i)
            ip = '10.0.0.%s'%str(i)
-           host[i-1]= net.addHost('h%s'%str(i),  ip=ip, mac=mac)
+           host[i-1]= net.addHost('h%s'%str(i),  ip=ip, mac=mac, cpu = 0.04)
       else:      
            mac = '00:00:00:00:00:%s'%str(i)
            ip = '10.0.0.%s'%str(i)
-           host[i-1]= net.addHost('h%s'%str(i),  ip=ip, mac=mac)
+           host[i-1]= net.addHost('h%s'%str(i),  ip=ip, mac=mac, cpu = 0.04)
      
 
    switch = [0]*20 
@@ -38,7 +39,7 @@ def emptyNet():
       switch[i-1]= net.addSwitch('s%s'%str(i), dpid= dpid)
       
 
-   linkopts = dict(cls=TCLink, bw=100, delay='5ms')#800Mb = 100MByte
+   linkopts = dict(cls=TCLink, bw=10, delay='5ms', max_queue_size=100, use_htb=True)#800Mb = 100MByte
    print 'bulding links for Core switches from S1 to S4.'
    net.addLink(switch[0], switch[4], **linkopts)
    net.addLink(switch[0], switch[6], **linkopts)
@@ -111,25 +112,26 @@ def emptyNet():
    
    net.build()
    c1.start()
-   
+   c1.cmd("tcpdump -i any -nn port 6633 -U -w mylog &")
    
    for i in range(0,20):
      switch[i].start([c1])
    net.start()
    enableSTP()
    net.staticArp()
+   
+   info( '\n*** Starting web server ***\n')
+   h15 = net.get('h15')
    os.system('sudo tcpdump -i lo -w ryu-local.cap &')
-   server=net.get('h%s'%str(15))
-   server.cmdPrint('sudo hping3 -c 1 -i  --verbose  -p 5546 10.0.0.15 &')
-
-   server.cmd('sudo tcpdump -i server-eth0 port 5546 -w server.pcap &')
+   h15.cmdPrint('iperf -s -u -p 5546 -i 245 > Server.log &')
+   h15.cmd('sudo tcpdump -i h15-eth0 port 5546 -w server.pcap &')
+   h15.cmdPrint('sudo tcpdump -i h15-eth0 udp -c 1000 src 10.0.0.7 -w Delay.pcap &')
    info( '*** Starting the simulation in 30 Seconds ***\n')
    time.sleep(30)
-   #global Pkt_number
 
    for i in range(1,15):
      client=net.get('h%s'%str(i))
-     client.cmdPrint('sudo hping3 -c 1 -i  --verbose  -p 5546 10.0.0.15 &')
+     client.cmdPrint('sudo hping3 -c 1 -i --udp --verbose  -p 5546 10.0.0.15 &')
 
 
    finish_time = 0
@@ -141,39 +143,59 @@ def emptyNet():
          t.setDaemon(True)
          t.start()
          if i == 14:
-            time.sleep(1)
+            time.sleep(3)
             i = 0
          finish_time = time.time() - start_time
-   time.sleep(1)
-
+   time.sleep(3)
+   global Pkt_number
+   x = threading.Thread(target= Attacker, args=(net,4))
+   x.setDaemon(True)
+   x.start()
    while finish_time < 240:
          i = i + 1
          x = threading.Thread(target= Attack, args=(net,i))
          x.setDaemon(True)
          x.start()
          if i == 14:
-            time.sleep(1)
+            time.sleep(3)
             i = 0
          finish_time = time.time() - start_time 
    print 'finish_time = ', finish_time 
-   
+   print Pkt_number 
    CLI( net )
    net.stop()
        
    
 def Training(net,i):
-        client=net.get('h%s'%str(i))
+        #value = randint(1, 10)
+        #client.cmdPrint('hping3 10.0.0.15  -c %s -s 2235 -p 5546 --data 500 &'%str(value))
+        client=net.get('h%s'%str(i))         
         client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 &'%(str(i)))
 
+def Attacker(net,i):
+         start_time = time.time()
+         finish_time = 0
+         while finish_time < 180:
+           client=net.get('h%s'%str(i))
+           #client.cmdPrint('sudo python UDPattack.py 10.0.0.%s 10.0.0.15 &'%str(i))
+           client.cmd('hping3 10.0.0.15  -c 1000 --udp --verbose -s 2235 -p 5546 --data 500 &')        
+           time.sleep(1)
+           finish_time = time.time() - start_time 
 
 def Attack(net,i):
-        client = net.get('h%s'%str(i)) 
-        if i == 4:
-            value = randint(1, 10)
-            client.cmdPrint('sudo hping3 -d 472 -c %d --udp -i u100 --verbose  -s 2235 -p 5546 10.0.0.15 -S'%(value))        
+        global Pkt_number
+        if i == 7:
+           client=net.get('h%s'%str(i))
+           client.cmdPrint('sudo python UDPNormal.py 10.0.0.%s 10.0.0.15 &'%str(i))
+           Pkt_number = Pkt_number + 100
+            #value = 10000 #randint(1, 10) P
+            #client.cmdPrint('iptables -I OUTPUT -p icmp --icmp-type destination-unreachable -j DROP &')        
+            #client.cmdPrint('hping3 10.0.0.15  -c 1000 --udp --verbose -s 2235 -p 5546 --data 500 &')        
+        elif i != 4:
+           client=net.get('h%s'%str(i))
+           client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 &'%str(i))
         else:
-            client=net.get('h%s'%str(i))
-            client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 &'%str(i))
+           pass
 
 def enableSTP():
     """

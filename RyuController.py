@@ -43,7 +43,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     ingressByte={}# Number of pkts for each ingress port in last round
     AvaPkt=[]# initial window
     AvaByte=[]
-    Counter = 1
+    Counter = 0
     Hostnumber = 14 # according to the Topology we have 14 user and one server
     WindowSizePkt = 8 # initail windows size
     WindowSizeByte = 8
@@ -96,9 +96,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                                     match=match, instructions=inst)
 
         datapath.send_msg(mod)
-        if actions == []:
-           self.blockedlist.setdefault((datapath.id,in_port), 0)
-           self.blockedlist[datapath.id,in_port ] = self.blockedlist[datapath.id,in_port] + 1
+           
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -125,7 +123,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
         
         if ip:# ckeck the adresses 
-           if len(self.host) > self.Hostnumber:#we have 80 hosts and one server
+           if len(self.host) > self.Hostnumber:#we have 14 hosts and one server
               if ip.src in self.host.keys():
                    pass
               else:
@@ -148,7 +146,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         actions = [parser.OFPActionOutput(out_port)]
 
-        # install a flow to avoid packet_in next time
+        #install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
             if ip:
                ipv = ip.src #getting the source ip address
@@ -189,7 +187,8 @@ class SimpleSwitch13(app_manager.RyuApp):
            dpid = datapath.id
            for stat in ev.msg.body:
             if stat.port_no in range(3,5):
-              self.Counter = self.Counter + 1 #counter for connected hosts which calculated into the summation result
+              self.prevaluePkt.setdefault((dpid,stat.port_no), 0)
+              self.prevalueByte.setdefault((dpid,stat.port_no), 0)
               if (dpid,stat.port_no) in self.blockedlist.keys():
                        pass
               elif dpid == 288:#server info
@@ -206,36 +205,35 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.prevalueByte[dpid,stat.port_no]= stat.rx_bytes
                 self.ingressPkt[dpid,stat.port_no] = DiffPkt #number of pkts during the last round for a cartain host
                 self.ingressByte[dpid,stat.port_no] = DiffByte #number of Bytes during the last round for a cartain host #number of Bytes during the last round for a cartain host
-                #print dpid, stat.port_no, DiffPkt , stat.rx_packets 
+                self.Counter = self.Counter + 1 #counter for connected hosts which calculated into the summation result
 
               if self.Counter >= self.Hostnumber:
                 self.Counter = 0
                 probabilityPkt = []
                 probabilityByte = []
-                a = 0
-                for i in self.Edgeswitch[:-1]:
-                  for x in range(3,5):
-                    if (i,x) in self.blockedlist.keys():
+                for dpid in self.Edgeswitch[:-1]:# -1 becuease the last switch has the server
+                  for inport in range(3,5):
+                    if (dpid,inport) in self.blockedlist.keys():
                        pass
                     else:
-                     self.ingressPkt.setdefault((i,x),1)
-                     self.ingressByte.setdefault((i,x),1)
-                     z = self.ingressPkt[i,x] / sum(self.ingressPkt.values())
-                     y = self.ingressByte[i,x] / sum(self.ingressByte.values())
+                     self.ingressPkt.setdefault((dpid,inport),0)
+                     self.ingressByte.setdefault((dpid,inport),0)
+                     if sum(self.ingressPkt.values())<= 0 or sum(self.ingressByte.values()) <= 0:
+                        return 
+                     z = self.ingressPkt[dpid,inport] / sum(self.ingressPkt.values()) 
+                     y = self.ingressByte[dpid,inport] / sum(self.ingressByte.values()) 
                      if z <= 0 or y <= 0:
                         return 
                      probabilityPkt.append(z * math.log(z, 2))
-                     probabilityByte.append(y * math.log(y, 2))                
+                     probabilityByte.append(y * math.log(y, 2))
                 EntropyPkt = - int((sum(probabilityPkt) / math.log(len(probabilityPkt), 2)) * 1000)
                 EntropyByte = - int((sum(probabilityByte)/math.log(len(probabilityByte), 2)) * 1000)
                 self.initial_WindowPkt(EntropyPkt)
                 self.initial_WindowByte(EntropyByte)
 
     def GainPkt(self, EntropyPkt, Threshold):
-           keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
-           print keys
-           #self.ingressPkt.clear()
            while EntropyPkt < Threshold :
+              keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
               n = keys
               dpid = n[0]
               port = n[1]
@@ -245,7 +243,13 @@ class SimpleSwitch13(app_manager.RyuApp):
               actions= []
               in_port = port
               self.add_flow(datapath, 100, match , actions, in_port, buffer_id=None)
-              del self.ingressPkt[keys]
+              self.blockedlist.setdefault((datapath.id,in_port), 0)
+              self.blockedlist[datapath.id,in_port ] = self.blockedlist[datapath.id,in_port] + 1
+              if keys in self.ingressPkt:
+                 del self.ingressPkt[keys]
+              if keys in self.ingressByte:
+                 del self.ingressByte[keys]
+              self.Hostnumber = self.Hostnumber - 1 
               probabilityPkt = []
               a = 0
               for k, values in self.ingressPkt.items():
@@ -253,12 +257,12 @@ class SimpleSwitch13(app_manager.RyuApp):
                    probabilityPkt.append( z * math.log(z, 2))
                    a = a + 1
               EntropyPkt = - int((sum(probabilityPkt) / math.log(a, 2)) * 1000)
-
+              print EntropyPkt , Threshold 
     def GainByte(self, EntropyByte, Threshold):
-           keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
-           print self.ingressByte
-           print keys
+
            while EntropyByte < Threshold :
+              keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
+              print keys
               n =  keys
               dpid = n[0]
               port = n[1]
@@ -268,15 +272,21 @@ class SimpleSwitch13(app_manager.RyuApp):
               actions = []
               in_port = port
               self.add_flow(datapath, 100, match , actions, in_port, buffer_id=None)
-              del self.ingressByte[keys]
-              probabilityBte = []
+              self.blockedlist.setdefault((datapath.id,in_port), 0)
+              self.blockedlist[datapath.id,in_port ] = self.blockedlist[datapath.id,in_port] + 1
+              if keys in self.ingressPkt:
+                 del self.ingressPkt[keys]
+              if keys in self.ingressByte:
+                 del self.ingressByte[keys]
+              self.Hostnumber = self.Hostnumber - 1 
+              probabilityByte = []
               a = 0
               for k, values in self.ingressByte.items():
                    z = values/ sum(self.ingressByte.values())
                    probabilityByte.append( z * math.log(z, 2))
                    a = a + 1
               EntropyByte = - int((sum(probabilityByte) / math.log(a, 2)) * 1000)   
-
+              print EntropyByte , Threshold 
     def initial_WindowPkt(self,EntropyPkt):
 
          if len(self.AvaPkt) >= self.WindowSizePkt:
@@ -342,9 +352,7 @@ class SimpleSwitch13(app_manager.RyuApp):
           b = open ('AvaPkt.txt', 'w')
           b.write(str(self.AvaPkt))
           b.close
-          a = open ('blockedlist.txt', 'w')
-          a.write(str(self.blockedlist))
-          a.close
+          
           
 
     def ByteEntropycalculation(self, Entropy):
@@ -479,12 +487,13 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         if len(self.ServerPkt) > 10 :
            self.ServerPkt = self.ServerPkt[-11:]
-           print " len(self.ServerPkt) ", len(self.ServerPkt)
+           #print " len(self.ServerPkt) ", len(self.ServerPkt)
            Oldcorr, _ = pearsonr(data1, self.ServerPkt[:-1])
            Newcorr, _ = pearsonr(data2, self.ServerPkt)
            l = Newcorr - Oldcorr
            print " l = ", l 
-           if Entropy < Threshold and l >= 0.2: 
+           if Entropy < Threshold:
+                 if l > 0.15: 
                        self.ServerPkt.pop(-1)# The controller would not consider the result out of the normal behaviour
                        self.blockPkt.append(3)
                        self.GainPkt(Entropy, Threshold)# In order to block the attackers
@@ -504,7 +513,8 @@ class SimpleSwitch13(app_manager.RyuApp):
            Newcorr, _ = pearsonr(data2, self.ServerByte[-11:])
            l = Newcorr - Oldcorr
            print " l = ", l 
-           if Entropy < Threshold and l >= 0.2: 
+           if Entropy < Threshold:
+                 if l > 0.15:
                        self.ServerByte.pop(-1)
                        self.blockByte.append(3)
                        self.GainByte(Entropy, Threshold)
@@ -550,6 +560,9 @@ class ThreadingExample(SimpleSwitch13):
           Entryfile = open ('Flowcounter.txt', 'w')
           Entryfile.write(str(self.Flowcounter))
           Entryfile.close
+          blockedfile= open ('blockedlist.txt', 'w')
+          blockedfile.write(str(self.blockedlist))
+          blockedfile.close
           time.sleep(3)
 
     def monitor_port(self):

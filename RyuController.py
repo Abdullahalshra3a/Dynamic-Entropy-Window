@@ -25,7 +25,7 @@ import math
 import threading 
 import psutil, os, sys 
 import time
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr,entropy
 #import numpy as np
 #import matplotlib.pyplot as plt
  
@@ -209,25 +209,12 @@ class SimpleSwitch13(app_manager.RyuApp):
 
               if self.Counter >= self.Hostnumber:
                 self.Counter = 0
-                probabilityPkt = []
-                probabilityByte = []
-                for dpid in self.Edgeswitch[:-1]:# -1 becuease the last switch has the server
-                  for inport in range(3,5):
-                    if (dpid,inport) in self.blockedlist.keys():
-                       pass
-                    else:
-                     self.ingressPkt.setdefault((dpid,inport),0)
-                     self.ingressByte.setdefault((dpid,inport),0)
-                     if sum(self.ingressPkt.values())<= 0 or sum(self.ingressByte.values()) <= 0:
-                        return 
-                     z = self.ingressPkt[dpid,inport] / sum(self.ingressPkt.values()) 
-                     y = self.ingressByte[dpid,inport] / sum(self.ingressByte.values()) 
-                     if z <= 0 or y <= 0:
-                        return 
-                     probabilityPkt.append(z * math.log(z, 2))
-                     probabilityByte.append(y * math.log(y, 2))
-                EntropyPkt = - int((sum(probabilityPkt) / math.log(len(probabilityPkt), 2)) * 1000)
-                EntropyByte = - int((sum(probabilityByte)/math.log(len(probabilityByte), 2)) * 1000)
+                if sum(self.ingressPkt.values()) <= 0 or sum(self.ingressByte.values()) <=0:
+                   return
+
+                EntropyPkt  = int((entropy(self.ingressPkt.values(), base =2)/ math.log(len(self.ingressPkt), 2))*1000)
+                EntropyByte = int((entropy(self.ingressByte.values(), base =2)/ math.log(len(self.ingressByte), 2))*1000)
+
                 self.initial_WindowPkt(EntropyPkt)
                 self.initial_WindowByte(EntropyByte)
 
@@ -251,12 +238,10 @@ class SimpleSwitch13(app_manager.RyuApp):
                  del self.ingressByte[keys]
               self.Hostnumber = self.Hostnumber - 1 
               probabilityPkt = []
-              a = 0
               for k, values in self.ingressPkt.items():
                    z = values/ sum(self.ingressPkt.values())
                    probabilityPkt.append( z * math.log(z, 2))
-                   a = a + 1
-              EntropyPkt = - int((sum(probabilityPkt) / math.log(a, 2)) * 1000)
+              EntropyPkt = - int((sum(probabilityPkt) / math.log(len(self.ingressPkt), 2)) * 1000)
               print EntropyPkt , Threshold 
     def GainByte(self, EntropyByte, Threshold):
 
@@ -280,12 +265,10 @@ class SimpleSwitch13(app_manager.RyuApp):
                  del self.ingressByte[keys]
               self.Hostnumber = self.Hostnumber - 1 
               probabilityByte = []
-              a = 0
               for k, values in self.ingressByte.items():
                    z = values/ sum(self.ingressByte.values())
                    probabilityByte.append( z * math.log(z, 2))
-                   a = a + 1
-              EntropyByte = - int((sum(probabilityByte) / math.log(a, 2)) * 1000)   
+              EntropyByte = - int((sum(probabilityByte) / math.log(len(self.ingressByte), 2)) * 1000)   
               print EntropyByte , Threshold 
     def initial_WindowPkt(self,EntropyPkt):
 

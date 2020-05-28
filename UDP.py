@@ -5,21 +5,23 @@
 from random import randint
 import sys, os
 from scapy.all import *
-
+from datetime import datetime
+ 
 
 def generatePackets():
-      if len(sys.argv) != 3:
+      if len(sys.argv) != 4:
         print "Usage: arping2tex <net>\n eg: arping2text 192.168.1.0/24"
         sys.exit(1)
       src= sys.argv[1]
       dst= sys.argv[2]
-      #print src, dst       
-      data = "Abdullah Soliman Alshraa"
+      x = int(sys.argv[3])
+      print x       
       ip=IP(src= src, dst= dst)
-      udp=UDP(sport= 2235, dport=5546)#, 
+      udp=UDP(sport= 2235, dport=5546)#,
+      data = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
       pkt = (ip/udp/data)
-      x = random.randint(1,10)
-      send(pkt, count = x, inter=1./x)   
+      #x = random.randint(300,400)
+      send(pkt, count = x, inter=1./10000)   
     
 if __name__ == '__main__':
     generatePackets()

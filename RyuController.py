@@ -44,7 +44,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     AvaPkt=[]# initial window
     AvaByte=[]
     Counter = 0
-    Hostnumber = 14 # according to the Topology we have 14 user and one server
+    Hostnumber = 15 # according to the Topology we have 14 user and one server
     WindowSizePkt = 8 # initail windows size
     WindowSizeByte = 8
     blockedlist = {}# the dpid and port which connected to the blocked user
@@ -123,11 +123,12 @@ class SimpleSwitch13(app_manager.RyuApp):
         #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
         
         if ip:# ckeck the adresses 
-           if len(self.host) > self.Hostnumber:#we have 14 hosts and one server
+           if len(self.host) >= self.Hostnumber:#we have 14 hosts and one server
               if ip.src in self.host.keys():
                    pass
               else:
                  print "BLOCK"
+                 self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
                  actions = []
                  match = parser.OFPMatch(in_port=in_port)
                  self.add_flow(datapath, 100, match, in_port , actions)
@@ -552,6 +553,6 @@ class ThreadingExample(SimpleSwitch13):
           time.sleep(20)
           while True:
                self.send_port_stats_request()
-               time.sleep(5)
+               time.sleep(3)
                
 example = ThreadingExample()

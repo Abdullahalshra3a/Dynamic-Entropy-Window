@@ -15,7 +15,7 @@ Pkt_number = 0
 def emptyNet():
    os.system('sudo mn -c')
    os.system('pkill -KILL iperf')
-   net = Mininet(controller=RemoteController,host=CPULimitedHost, switch=OVSKernelSwitch, link=TCLink )
+   net = Mininet(controller=RemoteController,host=CPULimitedHost, link=TCLink )
    c1 = net.addController('c1', controller=RemoteController, ip="127.0.0.1")
    host= [0]*15 
    for i in range(1,16):
@@ -39,7 +39,7 @@ def emptyNet():
       switch[i-1]= net.addSwitch('s%s'%str(i), dpid= dpid)
       
 
-   linkopts = dict(cls=TCLink, bw=10, delay='5ms', max_queue_size=100, use_htb=True)#800Mb = 100MByte
+   linkopts = dict(cls=TCLink, bw=100, delay='5ms', max_queue_size=100, use_htb=True)#800Mb = 100MByte
    print 'bulding links for Core switches from S1 to S4.'
    net.addLink(switch[0], switch[4], **linkopts)
    net.addLink(switch[0], switch[6], **linkopts)
@@ -112,7 +112,7 @@ def emptyNet():
    
    net.build()
    c1.start()
-   c1.cmd("tcpdump -i any -nn port 6633 -U -w mylog &")
+   #c1.cmd("tcpdump -i any -nn port 6633 -U -w mylog &")
    
    for i in range(0,20):
      switch[i].start([c1])
@@ -124,42 +124,43 @@ def emptyNet():
    h15 = net.get('h15')
    os.system('sudo tcpdump -i lo -w ryu-local.cap &')
    h15.cmdPrint('iperf -s -u -p 5546 -i 245 > Server.log &')
+   #h15.cmdPrint('sudo ./D-ITG-2.8.1-r1023/bin/ITGRecv &')
    h15.cmd('sudo tcpdump -i h15-eth0 port 5546 -w server.pcap &')
-   h15.cmdPrint('sudo tcpdump -i h15-eth0 udp -c 1000 src 10.0.0.7 -w Delay.pcap &')
+   #h15.cmdPrint('sudo tcpdump -i h15-eth0 udp -c 1000 src 10.0.0.7 -w Delay.pcap &')
    info( '*** Starting the simulation in 30 Seconds ***\n')
+   info( '*** Run the ryu Controller now ***\n')
    time.sleep(30)
 
    for i in range(1,15):
      client=net.get('h%s'%str(i))
      client.cmdPrint('sudo hping3 -c 1 -i --udp --verbose  -p 5546 10.0.0.15 &')
 
-
+   time.sleep(2)
    finish_time = 0
    i = 0 
-   start_time = time.time()     
-   while finish_time <60:# Training time to gather the information
-         i = i + 1
-         t = threading.Thread(target= Training, args=(net,i,))
-         t.setDaemon(True)
-         t.start()
-         if i == 14:
-            time.sleep(3)
-            i = 0
+   start_time = time.time()
+   for i in range(1,15):
+       t = threading.Thread(target= Training, args=(net,i,))
+       t.setDaemon(True)
+       t.start()     
+   while finish_time <61:# Training time to gather the information       
          finish_time = time.time() - start_time
-   time.sleep(3)
+
+   time.sleep(1)
    global Pkt_number
-   x = threading.Thread(target= Attacker, args=(net,4))
-   x.setDaemon(True)
-   x.start()
-   while finish_time < 240:
-         i = i + 1
+   """
+   #x = threading.Thread(target= Attacker, args=(net,1))
+   #x.setDaemon(True)
+   #x.start()
+   for i in range(1,15):
          x = threading.Thread(target= Attack, args=(net,i))
          x.setDaemon(True)
          x.start()
-         if i == 14:
-            time.sleep(3)
-            i = 0
+   """
+   Attack(net)
+   while finish_time < 240:
          finish_time = time.time() - start_time 
+
    print 'finish_time = ', finish_time 
    print Pkt_number 
    CLI( net )
@@ -167,35 +168,64 @@ def emptyNet():
        
    
 def Training(net,i):
-        #value = randint(1, 10)
+      start_time = time.time()
+      finish_time = 0
+      while finish_time < 60: 
+        x = randint(1,10)
         #client.cmdPrint('hping3 10.0.0.15  -c %s -s 2235 -p 5546 --data 500 &'%str(value))
         client=net.get('h%s'%str(i))         
-        client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 &'%(str(i)))
-
+        client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
+        time.sleep(1)
+        finish_time = time.time() - start_time 
 def Attacker(net,i):
          start_time = time.time()
          finish_time = 0
          while finish_time < 180:
            client=net.get('h%s'%str(i))
            #client.cmdPrint('sudo python UDPattack.py 10.0.0.%s 10.0.0.15 &'%str(i))
-           client.cmd('hping3 10.0.0.15  -c 1000 --udp --verbose -s 2235 -p 5546 --data 500 &')        
+           client.cmd('hping3 10.0.0.15  -c %s --udp --flood  --verbose -s 2235 -p 5546 --data 500 &'%x)        
            time.sleep(1)
            finish_time = time.time() - start_time 
 
-def Attack(net,i):
+def Attack(net):
         global Pkt_number
-        if i == 7:
-           client=net.get('h%s'%str(i))
-           client.cmdPrint('sudo python UDPNormal.py 10.0.0.%s 10.0.0.15 &'%str(i))
-           Pkt_number = Pkt_number + 100
-            #value = 10000 #randint(1, 10) P
-            #client.cmdPrint('iptables -I OUTPUT -p icmp --icmp-type destination-unreachable -j DROP &')        
-            #client.cmdPrint('hping3 10.0.0.15  -c 1000 --udp --verbose -s 2235 -p 5546 --data 500 &')        
-        elif i != 4:
-           client=net.get('h%s'%str(i))
-           client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 &'%str(i))
-        else:
-           pass
+        K = [1,3,5]
+           #if i == 7:
+           #client=net.get('h%s'%str(i))
+           #client.cmdPrint('sudo python UDPNormal.py 10.0.0.%s 10.0.0.15 &'%str(i))
+           #Pkt_number = Pkt_number + 100
+           #value = 10000 #randint(1, 10) P
+           #client.cmdPrint('iptables -I OUTPUT -p icmp --icmp-type destination-unreachable -j DROP &')        
+           #client.cmdPrint('hping3 10.0.0.15  -c 1000 --udp --verbose -s 2235 -p 5546 --data 500 &')
+        start_time = time.time()
+        finish_time = 0
+        N = 0
+        attackers = [1,2,3]
+        attackers.append(K[N])
+        Period = 10        
+        while finish_time < 180:
+          for i in range(1,15):
+             if i in attackers:
+               x = 10000 #randint(1000,1500)
+               client=net.get('h%s'%str(i))
+               #client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 &'%str(i))
+               client.cmdPrint('hping3 10.0.0.15 -c %s --udp -i u10 --verbose -s 2235 -p 5546  &' %x)#--data 500        
+               finish_time = time.time() - start_time          
+             else:
+                x = randint(300,400)
+                client=net.get('h%s'%str(i))
+                client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
+                #client.cmdPrint('sudo ./D-ITG-2.8.1-r1023/bin/ITGSend -T UDP -a 127.0.0.1 -c 100 -C %s \-l sender.log -x receiver.log &'%x)
+                Pkt_number = Pkt_number + x
+                finish_time = time.time() - start_time
+                if finish_time > Period:
+                   Period = Period + 20
+                   N = N + 1     
+                   #attackers = K[N-1:N+1]
+                   #attacker = k[:N]
+          t_end = time.time() + 1 
+          while time.time() < t_end:
+            pass
 
 def enableSTP():
     """

@@ -47,13 +47,13 @@ class SimpleSwitch13(app_manager.RyuApp):
     Hostnumber = 15 # according to the Topology we have 14 user and one server
     WindowSizePkt = 8 # initail windows size
     WindowSizeByte = 8
-    blockedlist = {}# the dpid and port which connected to the blocked user
+    blockedlist = {(0,0):0}# the dpid and port which connected to the blocked user
     host = {}# includes the IP adrress with the mac addres for each host
     Edgeswitch = [275,276,277,278,279,280,281,288]
     ResultPkt = []
     ResultByte = []
-    ServerPkt = []
-    ServerByte = []
+    ServerPkt = [1,1,1,1,1,1,1,1,1,1]
+    ServerByte = [1,1,1,1,1,1,1,1,1,1]
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
@@ -87,7 +87,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
                                              actions)]
-        if buffer_id:
+        if buffer_id:        
             mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
                                     priority=priority, match=match,
                                     instructions=inst)
@@ -121,21 +121,19 @@ class SimpleSwitch13(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
         #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
-        
-        if ip:# ckeck the adresses 
-           if len(self.host) >= self.Hostnumber:#we have 14 hosts and one server
-              if ip.src in self.host.keys():
-                   pass
-              else:
-                 print "BLOCK"
-                 self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
-                 actions = []
-                 match = parser.OFPMatch(in_port=in_port)
-                 self.add_flow(datapath, 100, match, in_port , actions)
-                 return
-           else:
-             print "new item"
-             self.host.setdefault(ip.src, src)
+        if ip:
+          if ip.src in self.host.keys():
+               pass
+          elif len(self.host) >= self.Hostnumber :
+            print "BLOCK"
+            self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+            actions = []
+            match = parser.OFPMatch(in_port=in_port)
+            self.add_flow(datapath, 100, match, in_port , actions)
+            return
+          else:
+            print "new item"
+            self.host[ip.src] = src
         
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -208,19 +206,20 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.ingressByte[dpid,stat.port_no] = DiffByte #number of Bytes during the last round for a cartain host #number of Bytes during the last round for a cartain host
                 self.Counter = self.Counter + 1 #counter for connected hosts which calculated into the summation result
 
-              if self.Counter >= self.Hostnumber:
+              if self.Counter >= (self.Hostnumber - 1):#1 is the Server
                 self.Counter = 0
                 if sum(self.ingressPkt.values()) <= 0 or sum(self.ingressByte.values()) <=0:
                    return
 
-                EntropyPkt  = int((entropy(self.ingressPkt.values(), base =2)/ math.log(len(self.ingressPkt), 2))*1000)
-                EntropyByte = int((entropy(self.ingressByte.values(), base =2)/ math.log(len(self.ingressByte), 2))*1000)
-
+                EntropyPkt  = abs(int((entropy(self.ingressPkt.values(), base =2)/ math.log(len(self.ingressPkt), 2))*1000))
+                EntropyByte = abs(int((entropy(self.ingressByte.values(), base =2)/ math.log(len(self.ingressByte), 2))*1000))
+                if EntropyPkt <= 0 or EntropyByte <= 0:
+                   return
                 self.initial_WindowPkt(EntropyPkt)
                 self.initial_WindowByte(EntropyByte)
 
     def GainPkt(self, EntropyPkt, Threshold):
-           while EntropyPkt < Threshold :
+           while EntropyPkt <= Threshold :
               keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
               n = keys
               dpid = n[0]
@@ -241,12 +240,15 @@ class SimpleSwitch13(app_manager.RyuApp):
               probabilityPkt = []
               for k, values in self.ingressPkt.items():
                    z = values/ sum(self.ingressPkt.values())
-                   probabilityPkt.append( z * math.log(z, 2))
-              EntropyPkt = - int((sum(probabilityPkt) / math.log(len(self.ingressPkt), 2)) * 1000)
+                   if z <= 0:
+                     pass
+                   else:
+                     probabilityPkt.append( z * math.log(z, 2))
+              EntropyPkt = abs(int((sum(probabilityPkt) / math.log(len(self.ingressPkt), 2)) * 1000))
               print EntropyPkt , Threshold 
     def GainByte(self, EntropyByte, Threshold):
 
-           while EntropyByte < Threshold :
+           while EntropyByte <= Threshold :
               keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
               print keys
               n =  keys
@@ -268,8 +270,11 @@ class SimpleSwitch13(app_manager.RyuApp):
               probabilityByte = []
               for k, values in self.ingressByte.items():
                    z = values/ sum(self.ingressByte.values())
-                   probabilityByte.append( z * math.log(z, 2))
-              EntropyByte = - int((sum(probabilityByte) / math.log(len(self.ingressByte), 2)) * 1000)   
+                   if z <= 0:
+                     pass
+                   else:
+                     probabilityPkt.append( z * math.log(z, 2))
+              EntropyByte = abs(int((sum(probabilityByte) / math.log(len(self.ingressByte), 2)) * 1000))   
               print EntropyByte , Threshold 
     def initial_WindowPkt(self,EntropyPkt):
 
@@ -280,7 +285,7 @@ class SimpleSwitch13(app_manager.RyuApp):
            self.ServerPkt = self.ServerPkt[-10:]
 
          if EntropyPkt > 600:#adjust the iniital window with the reasonable values 
-             self.addtoWindowPkt(EntropyPkt)   
+           self.addtoWindowPkt(EntropyPkt)   
 
     def addtoWindowPkt(self, EntropyPkt): 
          for i in range(0,len(self.AvaPkt)):
@@ -299,7 +304,7 @@ class SimpleSwitch13(app_manager.RyuApp):
              self.ServerPkt = self.ServerPkt[-10:]
 
          if EntropyByte > 600:
-             self.addtoWindowByte(EntropyByte)
+           self.addtoWindowByte(EntropyByte)
              
          
     def addtoWindowByte(self, EntropyByte): 
@@ -465,7 +470,6 @@ class SimpleSwitch13(app_manager.RyuApp):
          
     def Pkt_ThresholdVerification(self, Threshold, Entropy):
         data1 = [1,2,3,4,5,6,7,8,9,10]
-        data2 = [1,2,3,4,5,6,7,8,9,10,11]
         l = 0
         # calculate Pearson's correlation
 
@@ -473,7 +477,7 @@ class SimpleSwitch13(app_manager.RyuApp):
            self.ServerPkt = self.ServerPkt[-11:]
            #print " len(self.ServerPkt) ", len(self.ServerPkt)
            Oldcorr, _ = pearsonr(data1, self.ServerPkt[:-1])
-           Newcorr, _ = pearsonr(data2, self.ServerPkt)
+           Newcorr, _ = pearsonr(data1, self.ServerPkt[-10:])
            l = Newcorr - Oldcorr
            print " l = ", l 
            if Entropy < Threshold:
@@ -489,12 +493,12 @@ class SimpleSwitch13(app_manager.RyuApp):
 
     def Byte_ThresholdVerification(self, Threshold, Entropy):
         data1 = [1,2,3,4,5,6,7,8,9,10]
-        data2 = [1,2,3,4,5,6,7,8,9,10,11]
         l = 0
         # calculate Pearson's correlation
         if len(self.ServerByte) > 10:
-           Oldcorr, _ = pearsonr(data1, self.ServerByte[-10:])
-           Newcorr, _ = pearsonr(data2, self.ServerByte[-11:])
+           self.ServerByte = self.ServerByte[-11:]
+           Oldcorr, _ = pearsonr(data1, self.ServerByte[:-1])
+           Newcorr, _ = pearsonr(data1, self.ServerByte[-10:])
            l = Newcorr - Oldcorr
            print " l = ", l 
            if Entropy < Threshold:
@@ -550,7 +554,7 @@ class ThreadingExample(SimpleSwitch13):
           time.sleep(3)
 
     def monitor_port(self):
-          time.sleep(20)
+          time.sleep(30)
           while True:
                self.send_port_stats_request()
                time.sleep(3)

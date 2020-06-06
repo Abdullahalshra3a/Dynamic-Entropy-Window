@@ -54,6 +54,8 @@ class SimpleSwitch13(app_manager.RyuApp):
     ResultByte = []
     ServerPkt = [1,1,1,1,1,1,1,1,1,1]
     ServerByte = [1,1,1,1,1,1,1,1,1,1]
+    GreatestPkt = 0
+    GreatestByte = 0
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
@@ -219,8 +221,12 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.initial_WindowByte(EntropyByte)
 
     def GainPkt(self, EntropyPkt, Threshold):
+           
            while EntropyPkt <= Threshold :
+              print "ingress ", self.ingressPkt
               keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
+              if self.ingressPkt[keys] <= self.GreatestPkt * 2:
+                 return
               n = keys
               dpid = n[0]
               port = n[1]
@@ -250,7 +256,8 @@ class SimpleSwitch13(app_manager.RyuApp):
 
            while EntropyByte <= Threshold :
               keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
-              print keys
+              if self.ingressByte[keys] <= self.GreatestByte * 2:
+                 return
               n =  keys
               dpid = n[0]
               port = n[1]
@@ -273,7 +280,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                    if z <= 0:
                      pass
                    else:
-                     probabilityPkt.append( z * math.log(z, 2))
+                     probabilityByte.append( z * math.log(z, 2))
               EntropyByte = abs(int((sum(probabilityByte) / math.log(len(self.ingressByte), 2)) * 1000))   
               print EntropyByte , Threshold 
     def initial_WindowPkt(self,EntropyPkt):
@@ -281,6 +288,9 @@ class SimpleSwitch13(app_manager.RyuApp):
          if len(self.AvaPkt) >= self.WindowSizePkt:
              self.PktEntropycalculation(EntropyPkt)
              return
+         keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
+         if self.GreatestPkt < self.ingressPkt[keys]:
+             self.GreatestPkt = self.ingressPkt[keys]
          if len(self.ServerPkt) > 10:
            self.ServerPkt = self.ServerPkt[-10:]
 
@@ -300,6 +310,9 @@ class SimpleSwitch13(app_manager.RyuApp):
          if len(self.AvaByte) >= self.WindowSizeByte:
              self.ByteEntropycalculation(EntropyByte)
              return
+         keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
+         if self.GreatestByte < self.ingressByte[keys]:
+             self.GreatestByte = self.ingressByte[keys]
          if len(self.ServerByte) > 10:
              self.ServerPkt = self.ServerPkt[-10:]
 
@@ -489,6 +502,9 @@ class SimpleSwitch13(app_manager.RyuApp):
              self.ServerPkt.pop(0)
              self.blockPkt.append(0)
              self.addtoWindowPkt(Entropy)
+             keys = max(self.ingressPkt, key = lambda k: self.ingressPkt[k])
+             if self.GreatestPkt < self.ingressPkt[keys]:
+                 self.GreatestPkt = self.ingressPkt[keys]
 
 
     def Byte_ThresholdVerification(self, Threshold, Entropy):
@@ -510,6 +526,9 @@ class SimpleSwitch13(app_manager.RyuApp):
              self.ServerByte.pop(0)
              self.blockByte.append(0)
              self.addtoWindowByte(Entropy)
+             keys = max(self.ingressByte, key = lambda k: self.ingressByte[k])
+             if self.GreatestByte < self.ingressByte[keys]:
+               self.GreatestByte = self.ingressByte[keys]
 
 class ThreadingExample(SimpleSwitch13):
     """ Threading example class
@@ -551,6 +570,7 @@ class ThreadingExample(SimpleSwitch13):
           blockedfile= open ('blockedlist.txt', 'w')
           blockedfile.write(str(self.blockedlist))
           blockedfile.close
+          t_end = time.time() + 3 
           time.sleep(3)
 
     def monitor_port(self):
@@ -558,5 +578,4 @@ class ThreadingExample(SimpleSwitch13):
           while True:
                self.send_port_stats_request()
                time.sleep(3)
-               
 example = ThreadingExample()

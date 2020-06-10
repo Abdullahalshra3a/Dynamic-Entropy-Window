@@ -146,14 +146,13 @@ def emptyNet():
        t = threading.Thread(target= Training, args=(net,i,))
        t.setDaemon(True)
        t.start()     
-   while finish_time <60:# Training time to gather the information       
+   while finish_time <63:# Training time to gather the information       
          finish_time = time.time() - start_time
 
    global Pkt_number
  
    Attack(net)
-   while finish_time < 140:
-         finish_time = time.time() - start_time 
+   finish_time = time.time() - start_time 
 
    print 'finish_time = ', finish_time 
    print Pkt_number 
@@ -165,10 +164,10 @@ def Training(net,i):
       start_time = time.time()
       finish_time = 0
       while finish_time < 60: 
-        x = randint(200,250)
+        x = randint(1,400)
         #client.cmdPrint('hping3 10.0.0.15  -c %s -s 2235 -p 5546 --data 500 &'%str(value))
         client=net.get('h%s'%str(i))         
-        client.cmdPrint('sudo python UDPattack.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
+        client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
         t_end = time.time() + 1 
         while time.time() < t_end:
             pass #python time sleep function actually stops the execution of current thread only, not the whole program.
@@ -176,40 +175,40 @@ def Training(net,i):
 
 def Attack(net):
         global Pkt_number
-        K = [1,3,5,7,9,11,13]
+        K = [1,3,5]
         start_time = time.time()
         finish_time = 0
-        N = 0
-        attackers = []
-        attackers.append(K[N])
-        Period = 10        
-        while finish_time < 140:
+        #N = 0
+        attackers = [1,3,5]
+        #attackers.append(K[N])
+        #Period = 10        
+        while finish_time < 180:
           for i in range(1,15):
-             #if i in attackers:
-              # x = 10000# randint(30,40)
-               #client=net.get('h%s'%str(i))
-               #client.cmdPrint('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i, x))
-               #client.cmd('hping3 10.0.0.15 -c %s --udp -i u10 --verbose -s 2235 -p 5546 &' %x)#--data 500        
-               #finish_time = time.time() - start_time          
-             #else:
-                x = randint(200,250)
+             if i in attackers:
+               x = 400 #randint(10,300)
+               client=net.get('h%s'%str(i))
+               client.cmd('sudo python UDPattack.py 10.0.0.%s 10.0.0.15 %s &'%(i, x))
+               #client.cmd('hping3 10.0.0.15 -c %s --udp -i u1 --verbose -s 2235 -p 5546 &' %x)#--data 500        
+               finish_time = time.time() - start_time          
+             else:
+                x = randint(1,400)
                 #client.cmdPrint('sudo ./D-ITG-2.8.1-r1023/bin/ITGSend -T UDP -a 127.0.0.1 -c 100 -C %s \-l sender.log -x receiver.log &'%x)
-                if (i % 2) != 0:
-                   client=net.get('h%s'%str(i))
-                   client.cmd('sudo python UDPattack.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
-                else:
-                   client=net.get('h%s'%str(i))
-                   client.cmd('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
-                   Pkt_number = Pkt_number + x
+                #if (i % 2) != 0:
+                 #  client=net.get('h%s'%str(i))
+                 #  client.cmd('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
+                #else:
+                client=net.get('h%s'%str(i))
+                client.cmd('sudo python UDP.py 10.0.0.%s 10.0.0.15 %s &'%(i,x))
+                Pkt_number = Pkt_number + x
                 finish_time = time.time() - start_time
-                if finish_time > Period:
-                   Period = Period + 10
-                   if N > 7 :
-                     pass
-                   else:
-                     N = N + 1     
-                     attackers = K[:N+1]
-                   print "attackers  ", attackers
+                #if finish_time > Period:
+                 #  Period = Period + 10
+                  # if N > 7 :
+                   #  pass
+                   #else:
+                    # N = N + 1     
+                     #attackers = K[:N+1]
+                   #print "attackers  ", attackers
           t_end = time.time() + 1 
           while time.time() < t_end:
             pass

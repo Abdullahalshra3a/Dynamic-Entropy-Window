@@ -154,6 +154,7 @@ class SimpleSwitch13(app_manager.RyuApp):
            if pkt_tcp.bits == 2 :#SYN Flag
                  idle_timeout = 3 
                  hard_timeout = 3
+                 priority = 20
                      if (src,pkt_tcp.src_port) in self.pending_list.keys():
                        self.pending_list[src,pkt_tcp.src_port] += 1
                        self.SYN_list[src, dpid,in_port,"SYN"] += 1                      
@@ -172,6 +173,7 @@ class SimpleSwitch13(app_manager.RyuApp):
            elif pkt_tcp.bits == 16: #ACK flag
                if (src,pkt_tcp.src_port) in self.pending_list.keys():
                  del self.pending_list[src,pkt_tcp.src_port]
+                 priority = 30
                  match = parser.OFPMatch(in_port=in_port, tcp_src =pkt_tcp.src_port, eth_dst=dst, eth_src=src, eth_type=0x800, ipv4_src= ipv )
                  self.ACK_list.setdefault((src,dpid,in_port,"Ack"), 0)
                  self.ACK_list[src, dpid,in_port,"Ack"] += 1
@@ -189,11 +191,13 @@ class SimpleSwitch13(app_manager.RyuApp):
                   match = parser.OFPMatch(in_port=in_port, eth_dst=dst, eth_src=src)
             # verify if we have a valid buffer_id, if yes avoid to send both
             # flow_mod & packet_out
+            if not priority:
+                priority = 1
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
-                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                self.add_flow(datapath, priority, match, actions, msg.buffer_id)
                 return
             else:
-                self.add_flow(datapath, 1, match, actions)
+                self.add_flow(datapath, priority, match, actions)
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data

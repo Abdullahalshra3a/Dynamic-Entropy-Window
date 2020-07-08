@@ -60,7 +60,8 @@ class SimpleSwitch13(app_manager.RyuApp):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         self.Hostport()
-        self.pending_list = {}
+        self.pending_list = self.SYN_list = self.ACK_list = self.SYN_attacker= {}
+        self.threshold= 0
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -209,6 +210,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
     def check_TCP_Flags(self, dpid , port):
         while True:
+          time.sleep(1)
           Greatest = 0
           Attack = False
           for i in range (0, len(self.SYN_list)):
@@ -235,10 +237,12 @@ class SimpleSwitch13(app_manager.RyuApp):
                     self.add_flow(datapath, 100, match , actions, in_port, buffer_id=None)
                     self.blockedlist.setdefault((datapath.id,in_port), 0)
                     self.blockedlist[datapath.id,in_port ] = self.blockedlist[datapath.id,in_port] + 1
-
-          if not attack:
-             self.SYN_Attacker.clear()       
-          if self.threshold == 0:
+          self.pending_list = self.SYN_list = self.ACK_list = {}
+          if not Attack:
+             self.SYN_Attacker.clear()
+          if Greatest == 0 :
+             pass       
+          elif self.threshold == 0:
             self.threshold = Greatest
           else:
             self.threshold = (0.85 * threshold) + (0.15 * Greatest)
